@@ -1,86 +1,191 @@
 /**
- *
- * Poorly written. But it works.
- * dunklesToast - 2019
- */
-
-/*
-    Requiring basic modules
-    colors makes beautiful console output
-    axios is http module
-    fs is for filesystem things
-    path to work with file paths
-    minimist parses process arguments
- */
-
+* Improved script for downloading comics with state tracking, directory checking,
+* progress printing, and ETA calculation.
+* Stops the program if GET response is something else than 200.
+* Works in 2024
+* Add custom User-Agent and your subscriber smf cookie before use.
+*/
 require('colors');
 const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
+const minimist = require('minimist');
+const { exec } = require('child_process');
+
 const baseURL = 'https://www.akuankka.fi';
-const directory = path.join(__dirname + '/comics');
-const argv = require('minimist')(process.argv.slice(2));
+const directory = path.join(__dirname, 'comics');
+const argv = minimist(process.argv.slice(2));
 
-let start = parseInt(argv.start) || 1;
-const end = parseInt(argv.end) || 4794;
+const start = parseInt(argv.start) || 1;
+const end = parseInt(argv.end) || 5554;
 
-console.log('Downloading '.green + start.toString().blue + ' to '.green + end.toString().blue);
+const headers = {
+    'User-Agent': '',
+    'Host': 'api.akuankka.fi',
+    'Connection': 'Keep-Alive',
+    'Accept-Encoding': 'gzip',
+    'Cookie': 'YOUR_SMF_TOKEN; logged_in=1'
+};
+
+// ASCII Art at startup
+const asciiArt = (`
+                                                 ^>^                                 
+                                        ^*++^****<)](**                              
+                                      ^=(>~=(=::~)*+:<>                              
+                                    ^+(~::<(#}>*+^*<^]^                              
+                                   +^^:=<[####{+**=>^)*                              
+                            :     *(<(](]#{####<+  **     -                          
+                             -  ^=>]][#%%%%%%##<=  ~  :  :-                          
+                       ::    *+({{{{{#%%#%%%%{#** ~~    ~      ::                    
+                        -- **{%#%%#{}}{%#%%#*}>-=*+*+** -- ~~                      
+                          =]>{{###{##{{{}#>={<^^>%<*(%%%>*  ~                        
+                   --: :*~^-]###{##{###[+=^[~[^}{(##(]>[{~+~  --  --                 
+                      ~~+-<::<##{}]++^~=>]++>()#%#((-::(#~* =~  ~~                   
+              ::-   -   *:]*~-:::-~++^][->%#}%%%[]=::::-}~+=  =-  -                  
+                 -~~  -~~*=^{[((]}#(+-:))][##[))^:::::::)^+~=  =~   ~-               
+                    ~~=  ==^*:-:::::::=)]{%{%%}]^:::::::([= === ===                  
+                  --~~  =+= *^]~::::::-}%%%%%%%#):::::::^{+* ==   ~--                
+               :~~~    ==  ^~]~::::::::{(({@%]}}^-:::::::^^=^ ==     ~~~             
+                     ====  *([{~-:::::-~*>*)>^*+-~::::-:<}}=^ =====                  
+                   ~~====+ ^<>[=:=-~~~-:){%%@#}+:~=~=+=:<](+* +==~  -                
+              :~~~~=====++~=+()}~:-~-:-]#<#@@]({*::~-:-)}>>* ====~~==~~~~-           
+                            ^=]]##{])<)}{#%###<#{<<)}#%#[++                          
+                        =+===+*>)[#[[}}{}{}{{{[##{}}##<(**===                        
+            ---~~~      +==++=+*^+}{[}}]]()<><([}}{(}(^^+=====     ==~~~~-:          
+                -~~~      === +][]}}})*~:-===~::=>]}(])#> ===    ~=~~-               
+                   ~===   =+= +**+~*~::::::+-:::::*:^+**+ ===  +===                  
+             ----    ~=== ===++=+^+-^::::::::::-~==-**==+ =+=  ==~   ~~--            
+                  -    ==  =+ +=+=*-^~:::::=+++++)*^^+=++ +=  =~    -                
+                   ~=   ==  + ++ ++>(>::-+++++++^]()++ += +  ==  ~=                  
+                --   -~  ==  = ++++<%(>-~+++++++])%>*+=+ ==~== ~~    --              
+                       ~= *=(***+ ++%[)>~++++++><#{++ =**=<)= ==                     
+                     ~  *^=)]})[=* ^*#<<{)*+*<}<%[^*=++>(]{]=** ~~                   
+                  :-  *++{]{{###{}****^}#####%}(**=*=)}%##%{({<~^  -                 
+                      ^=)#%%]<]><][[<^+*^**+**^*+*^(]()>((<#%{[~^                    
+                       ^=<)*+^^^^^~<]##](^^+*^<]}#[]+*^^*^*=>)**                     
+                             ~~    +*=*))%%%}>])<=**    ~-                           
+                            -      *^+>[[<+)[{%}(++^      -                          
+                        *+++++*+++<{%#{(>*+^*+><[{#{<*++*+==+++                      
+                       *>})))<(<]#{])=^^        ^+*][%}<>]))<)[=^                    
+                       +)}%%%%[]>+**               ^*+*](#[]%#[~^                    
+                       +(#%%#}*+>                      ^=[}%%%{=>                    
+                       ^^))<)+^                         +*)[(><*                     
+                         *+^=*                            +=**                       
+`).green;
+
+console.log(asciiArt);
 
 (async function f() {
     await fs.ensureDir(directory);
-    //Loop through all Comics
-    for (start; start <= end; start++) {
-        const prefix = `${'['.black}${start.toString().yellow}${'/'.black}${end.toString().yellow}${']'.black} `;
-        console.log(`${prefix}${'Downloading Comic'.green} ${'#'.blue}${start.toString().blue}`);
-        console.log(prefix + 'Requesting '.green + (baseURL + 'api/v2/issues/' + start + '?stories-full=1').blue);
-        let comic;
-        try {
-            //Get Issue JSON which contains all information we need
-            comic = await axios(baseURL + '/api/v2/issues/' + start + '?stories-full=1');
-            comic = comic.data
-        } catch (e) {
-            console.log(prefix + e.message.toString().red);
-            continue;
-        }
-        await fs.ensureDir(directory + '/' + start.toString());
-        const currentComicDirectory = directory + '/' + start.toString();
-        await fs.writeFile(currentComicDirectory + '/issue.json', JSON.stringify(comic, null, 2));
-        console.log(prefix + 'Downloading '.green + comic.story_count.toString().blue + ' Stories...'.green);
-        //Loop through every story in the current comic
-        for(let story in comic.stories){
-            const storyPrefix = `${prefix}${'['.black}${story.toString().yellow}${'/'.black}${comic.stories.length.toString().yellow}${']'.black} `;
-            console.log(`${storyPrefix}${'Downloading Story'.green} ${'#'.blue}${story.toString().blue} "${comic.stories[story].title.yellow}" ${'with'.green} ${comic.stories[story].pages.length.toString().blue} ${'pages'.blue}`);
 
-            //Loop through every page in the current story
-            for(let page in comic.stories[story].pages){
-                const pagePrefix = `${storyPrefix}${'['.black}${(parseInt(page)+1).toString().yellow}${'/'.black}${comic.stories[story].pages.length.toString().yellow}${']'.black} `
-                const pg = comic.stories[story].pages[page];
-                const imageVersionKeys = Object.keys(pg.images);
-                console.log(`${pagePrefix}${'Found'.green} ${imageVersionKeys.length.toString().blue} ${'different Images for page'.green} ${(parseInt(page)+1).toString().blue}`);
-                //Download all given image versions => DataHoarder like.
-                for(let image in imageVersionKeys){
-                    console.log(`${pagePrefix}${'Attempting Image Version'.green} ${imageVersionKeys[image].yellow}`);
-                    const url = baseURL + pg.images[imageVersionKeys[image]].url;
+    const getLastExistingComicNumber = async () => {
+        const files = await fs.readdir(directory);
+        const directories = files.filter(file => fs.statSync(path.join(directory, file)).isDirectory());
+        if (directories.length === 0) return start;
+        const numbers = directories.map(dir => parseInt(dir)).filter(num => !isNaN(num));
+        return Math.max(...numbers, start);
+    };
+
+    const downloadComic = async (issueNum) => {
+        const comicDir = path.join(directory, issueNum.toString());
+        if (fs.existsSync(path.join(comicDir, 'issue.json'))) {
+            console.log('Reading from cache'.magenta);
+            return require(path.join(comicDir, 'issue.json'));
+        } else {
+            try {
+                const response = await axios.get(`${baseURL}/api/v2/issues/${issueNum}?stories-full=1`, { headers });
+                if (response.status !== 200) {
+                    console.log(`Failed to fetch comic ${issueNum}: HTTP ${response.status}`.red);
+                    fs.appendFileSync('errors.txt', `${baseURL}/api/v2/issues/${issueNum}?stories-full=1 - HTTP ${response.status}\r\n`);
+                    process.exit(1); // Stop the script if response is not 200
+                }
+                return response.data;
+            } catch (e) {
+                console.log(e.message.toString().red);
+                fs.appendFileSync('errors.txt', `${baseURL}/api/v2/issues/${issueNum}?stories-full=1\r\n`);
+                process.exit(1); // Stop the script if there is an error
+            }
+        }
+    };
+
+    const processComic = async (issueNum, startTime, totalIssues, processedIssues) => {
+        console.log(`[${issueNum}/${end}] Starting download...`.green);
+        console.log(`Processing Comic #${issueNum.toString().blue}`);
+        await fs.ensureDir(path.join(directory, issueNum.toString()));
+        const comic = await downloadComic(issueNum);
+        if (!comic) return;
+
+        await fs.writeFile(path.join(directory, issueNum.toString(), 'issue.json'), JSON.stringify(comic, null, 2));
+        console.log(`Downloading ${comic.story_count.toString().blue} Stories...`.green);
+
+        for (let storyIndex in comic.stories) {
+            const story = comic.stories[storyIndex];
+            const storyPrefix = `${issueNum}-${parseInt(storyIndex) + 1}`;
+            console.log(`Downloading Story #${storyIndex.toString().blue} "${story.title.yellow}" ${'with'.green} ${story.pages.length.toString().blue} ${'pages'.blue}`);
+
+            for (let pageIndex in story.pages) {
+                const page = story.pages[pageIndex];
+                const pagePrefix = `${storyPrefix}-Page_${parseInt(pageIndex) + 1}`;
+                const imageVersionKeys = Object.keys(page.images);
+                console.log(`Found ${imageVersionKeys.length.toString().blue} different Images for page ${parseInt(pageIndex) + 1}`);
+
+                for (let imageIndex in imageVersionKeys) {
+                    const imageKey = imageVersionKeys[imageIndex];
+                    console.log(`Attempting Image Version ${imageKey.yellow}`);
+                    const url = baseURL + page.images[imageKey].url;
                     let imageData;
                     try {
-                        //Download the final image
-                        imageData = await axios({
-                            responseType: 'arraybuffer',
-                            method: 'GET',
-                            url
-                        });
-                    }catch (e) {
-                        console.log(pagePrefix + e.message.toString().red);
+                        imageData = await axios.get(url, { responseType: 'arraybuffer', headers });
+                    } catch (e) {
+                        console.log(e.message.toString().red);
+                        fs.appendFileSync('errors.txt', url + '\r\n');
                         continue;
                     }
-                    const storyNum = parseInt(story)+1;
-                    const pageNum = parseInt(page)+1
-                    const savepath = currentComicDirectory + '/Story_' + storyNum + '/Page_' + pageNum + '/'
+
+                    const storyNum = parseInt(storyIndex) + 1;
+                    const pageNum = parseInt(pageIndex) + 1;
+                    const savepath = path.join(directory, issueNum.toString(), `Story_${storyNum}`, `Page_${pageNum}`);
                     await fs.ensureDir(savepath);
-                    //Save the Image like this: ComicNumber/Story_Number/Page_Number/Comic_Story_Page_ImageVersion.ext
-                    await fs.writeFile(savepath + start + '_' + storyNum + '_' + pageNum + '_' + imageVersionKeys[image] + path.extname(url), imageData.data);
+                    await fs.writeFile(path.join(savepath, `${issueNum}_${storyNum}_${pageNum}_${imageKey}${path.extname(url)}`), imageData.data);
                 }
             }
+        }
+
+        // Calculate ETA
+        const currentTime = new Date();
+        const elapsedTime = (currentTime - startTime) / 1000; // seconds
+        const averageTimePerComic = elapsedTime / processedIssues;
+        const remainingIssues = totalIssues - processedIssues;
+        const etaSeconds = remainingIssues * averageTimePerComic;
+
+        const etaHours = Math.floor(etaSeconds / 3600);
+        const etaMinutes = Math.floor((etaSeconds % 3600) / 60);
+        const etaSecondsRemaining = Math.floor(etaSeconds % 60);
+
+        console.log(`ETA for remaining comics: ${etaHours}h ${etaMinutes}m ${etaSecondsRemaining}s`.cyan);
+    };
+
+    const lastExistingComic = await getLastExistingComicNumber();
+    const startIssueNum = lastExistingComic + 1;
+
+    if (startIssueNum > end) {
+        console.log('All issues are already downloaded.'.green);
+        return;
+    }
+
+    console.log('Starting download from Comic #'.green + startIssueNum.toString().blue + ' to '.green + end.toString().blue);
+
+    const startTime = new Date();
+    const totalIssues = end - startIssueNum + 1;
+    let processedIssues = 0;
+
+    for (let issueNum = startIssueNum; issueNum <= end; issueNum++) {
+        await processComic(issueNum, startTime, totalIssues, ++processedIssues);
+
+        try {
+            fs.writeJsonSync(path.join(__dirname, 'progress.json'), { lastIssue: issueNum });
+        } catch (err) {
+            console.log('Error writing progress file:', err.message.red);
         }
     }
 })();
